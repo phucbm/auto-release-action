@@ -21,10 +21,10 @@ A GitHub Action that automatically creates releases when Dependabot merges PRs t
 ## Quick Start
 
 1. **Create Workflow File**
-   Create `.github/workflows/auto-release.yml`:
+   Create `.github/workflows/dependabot-release.yml`:
 
 ```yaml
-name: Auto Release
+name: Dependabot Release
 
 on:
   push:
