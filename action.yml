@@ -1,5 +1,5 @@
-name: 'Auto Release Action'
-description: 'Automatically create releases with version bumps when Dependabot pushes to main branch'
+name: 'Dependabot Release Action'
+description: 'Automatically create releases with version bumps when Dependabot pushes to the main branch'
 author: 'phucbm'
 
 branding:
