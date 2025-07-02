@@ -1,5 +1,5 @@
 name: 'Dependabot Release Action'
-description: 'Automatically create releases with version bumps when Dependabot pushes to the main branch'
+description: 'Automatically create releases when Dependabot merges PRs to main branch'
 author: 'phucbm'
 
 branding:
@@ -134,7 +134,7 @@ runs:
         
         # Configure git
         git config --local user.email "action@github.com"
-        git config --local user.name "Auto Release Action"
+        git config --local user.name "Dependabot Release Action"
         
         # Create annotated tag
         git tag -a "$new_tag" -m "Release $new_version"
@@ -187,7 +187,7 @@ runs:
           body += `- 📦 **Version bump**: ${{ inputs.version-bump }}\n`;
           body += `- 🤖 **Triggered by**: ${{ github.actor }}\n`;
           body += `- ℹ️ **Note**: Package.json will be updated by the publish workflow\n\n`;
-          body += `---\n*Automated by [Auto Release Action](https://github.com/phucbm/auto-release-action) by @phucbm*`;
+          body += `---\n*Automated by [Dependabot Release Action](https://github.com/phucbm/dependabot-release-action) by @phucbm*`;
           
           try {
             const response = await github.rest.repos.createRelease({
@@ -213,7 +213,7 @@ runs:
       if: steps.dependabot-check.outputs.is_dependabot == 'true'
       shell: bash
       run: |
-        echo "🎉 **Auto Release Summary**"
+        echo "🎉 **Dependabot Release Summary**"
         echo "📦 Version: ${{ steps.version-bump.outputs.version }}"
         echo "🏷️ Tag: ${{ steps.version-bump.outputs.tag }}"
         echo "🔗 Release: ${{ steps.create-release.outputs.release-url }}"
