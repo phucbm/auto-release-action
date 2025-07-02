@@ -1,0 +1,223 @@
+name: 'Auto Release Action'
+description: 'Automatically create releases with version bumps when Dependabot pushes to main branch'
+author: 'phucbm'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  version-bump:
+    description: 'Version bump type (patch, minor, major)'
+    required: false
+    default: 'patch'
+  github-token:
+    description: 'GitHub token for creating releases'
+    required: false
+    default: ${{ github.token }}
+  create-tag:
+    description: 'Create git tag for the release'
+    required: false
+    default: 'true'
+  release-notes:
+    description: 'Generate release notes from commits'
+    required: false
+    default: 'true'
+
+outputs:
+  version:
+    description: 'The new version that was released'
+    value: ${{ steps.version-bump.outputs.version }}
+  tag:
+    description: 'The git tag created'
+    value: ${{ steps.version-bump.outputs.tag }}
+  release-url:
+    description: 'URL of the created release'
+    value: ${{ steps.create-release.outputs.release-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check if triggered by Dependabot
+      id: dependabot-check
+      shell: bash
+      run: |
+        if [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
+          echo "is_dependabot=true" >> $GITHUB_OUTPUT
+        else
+          echo "is_dependabot=false" >> $GITHUB_OUTPUT
+          echo "🚫 Skipping release - not triggered by Dependabot"
+        fi
+
+    - name: Exit if not Dependabot
+      if: steps.dependabot-check.outputs.is_dependabot == 'false'
+      shell: bash
+      run: exit 0
+
+    - name: Checkout code
+      if: steps.dependabot-check.outputs.is_dependabot == 'true'
+      uses: actions/checkout@v4
+      with:
+        token: ${{ inputs.github-token }}
+        fetch-depth: 0
+
+    - name: Get current version from package.json
+      if: steps.dependabot-check.outputs.is_dependabot == 'true'
+      id: current-version
+      shell: bash
+      run: |
+        if [[ -f "package.json" ]]; then
+          current_version=$(jq -r '.version // "0.0.0"' package.json)
+          echo "has_package_json=true" >> $GITHUB_OUTPUT
+        else
+          current_version="0.0.0"
+          echo "has_package_json=false" >> $GITHUB_OUTPUT
+        fi
+        echo "current_version=$current_version" >> $GITHUB_OUTPUT
+        echo "📦 Current version: $current_version"
+
+    - name: Calculate new version
+      if: steps.dependabot-check.outputs.is_dependabot == 'true'
+      id: version-bump
+      shell: bash
+      run: |
+        current_version="${{ steps.current-version.outputs.current_version }}"
+        bump_type="${{ inputs.version-bump }}"
+        
+        echo "🔼 Bump type: $bump_type"
+        
+        # Parse semantic version
+        if [[ $current_version =~ ^([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+          major=${BASH_REMATCH[1]}
+          minor=${BASH_REMATCH[2]}
+          patch=${BASH_REMATCH[3]}
+        else
+          echo "⚠️ Invalid version format, starting from 0.0.0"
+          major=0
+          minor=0
+          patch=0
+        fi
+        
+        # Bump version based on type
+        case $bump_type in
+          "major")
+            major=$((major + 1))
+            minor=0
+            patch=0
+            ;;
+          "minor")
+            minor=$((minor + 1))
+            patch=0
+            ;;
+          "patch"|*)
+            patch=$((patch + 1))
+            ;;
+        esac
+        
+        new_version="$major.$minor.$patch"
+        new_tag="v$new_version"
+        
+        echo "🎯 New version: $new_version"
+        echo "🏷️ New tag: $new_tag"
+        
+        echo "version=$new_version" >> $GITHUB_OUTPUT
+        echo "tag=$new_tag" >> $GITHUB_OUTPUT
+
+    - name: Create git tag
+      if: steps.dependabot-check.outputs.is_dependabot == 'true' && inputs.create-tag == 'true'
+      shell: bash
+      run: |
+        new_tag="${{ steps.version-bump.outputs.tag }}"
+        new_version="${{ steps.version-bump.outputs.version }}"
+        
+        echo "🏷️ Creating tag: $new_tag"
+        
+        # Configure git
+        git config --local user.email "action@github.com"
+        git config --local user.name "Auto Release Action"
+        
+        # Create annotated tag
+        git tag -a "$new_tag" -m "Release $new_version"
+        git push origin "$new_tag"
+        
+        echo "✅ Created and pushed tag: $new_tag"
+
+    - name: Get commit messages for release notes
+      if: steps.dependabot-check.outputs.is_dependabot == 'true' && inputs.release-notes == 'true'
+      id: get-commits
+      shell: bash
+      run: |
+        # Get commits since last tag
+        last_tag=$(git describe --tags --abbrev=0 HEAD~1 2>/dev/null || echo "")
+        
+        if [[ -n "$last_tag" ]]; then
+          echo "📝 Getting commits since last tag: $last_tag"
+          commits=$(git log --oneline --pretty=format:"- %s" $last_tag..HEAD)
+        else
+          echo "📝 Getting recent commits (no previous tag found)"
+          commits=$(git log --oneline --pretty=format:"- %s" -10)
+        fi
+        
+        # Save commits to output (escape for GitHub)
+        {
+          echo "commits<<EOF"
+          echo "$commits"
+          echo "EOF"
+        } >> $GITHUB_OUTPUT
+
+    - name: Create GitHub release
+      if: steps.dependabot-check.outputs.is_dependabot == 'true'
+      id: create-release
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ inputs.github-token }}
+        script: |
+          const newTag = '${{ steps.version-bump.outputs.tag }}';
+          const newVersion = '${{ steps.version-bump.outputs.version }}';
+          const releaseNotes = '${{ inputs.release-notes }}' === 'true';
+          const commits = `${{ steps.get-commits.outputs.commits }}`;
+          
+          let body = `🤖 **Automated release** triggered by Dependabot dependency updates.\n\n`;
+          
+          if (releaseNotes && commits.trim()) {
+            body += `## What's Changed\n${commits}\n\n`;
+          }
+          
+          body += `## Details\n`;
+          body += `- 📦 **Version bump**: ${{ inputs.version-bump }}\n`;
+          body += `- 🤖 **Triggered by**: ${{ github.actor }}\n`;
+          body += `- ℹ️ **Note**: Package.json will be updated by the publish workflow\n\n`;
+          body += `---\n*Automated by [Auto Release Action](https://github.com/phucbm/auto-release-action) by @phucbm*`;
+          
+          try {
+            const response = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: newTag,
+              name: `Release ${newVersion}`,
+              body: body,
+              draft: false,
+              prerelease: false
+            });
+            
+            console.log(`✅ Created release: ${response.data.html_url}`);
+            core.setOutput('release-url', response.data.html_url);
+            
+            return response.data.html_url;
+          } catch (error) {
+            console.error('❌ Failed to create release:', error);
+            throw error;
+          }
+
+    - name: Summary
+      if: steps.dependabot-check.outputs.is_dependabot == 'true'
+      shell: bash
+      run: |
+        echo "🎉 **Auto Release Summary**"
+        echo "📦 Version: ${{ steps.version-bump.outputs.version }}"
+        echo "🏷️ Tag: ${{ steps.version-bump.outputs.tag }}"
+        echo "🔗 Release: ${{ steps.create-release.outputs.release-url }}"
+        echo "🤖 Triggered by: ${{ github.actor }}"
+        echo ""
+        echo "ℹ️ Package.json will be updated by the publish workflow"
+        echo "✅ Release created successfully!"
