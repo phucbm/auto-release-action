@@ -1,10 +1,10 @@
-# Auto Release Action
+# Dependabot Release Action
 
-[![github stars](https://badgen.net/github/stars/phucbm/auto-release-action?icon=github)](https://github.com/phucbm/auto-release-action/)
-[![github license](https://badgen.net/github/license/phucbm/auto-release-action?icon=github)](https://github.com/phucbm/auto-release-action/blob/main/LICENSE)
+[![github stars](https://badgen.net/github/stars/phucbm/dependabot-release-action?icon=github)](https://github.com/phucbm/dependabot-release-action/)
+[![github license](https://badgen.net/github/license/phucbm/dependabot-release-action?icon=github)](https://github.com/phucbm/dependabot-release-action/blob/main/LICENSE)
 [![Made in Vietnam](https://raw.githubusercontent.com/webuild-community/badge/master/svg/made.svg)](https://webuild.community)
 
-A GitHub Action that automatically creates releases with version bumps when Dependabot pushes to the main branch. Perfect for automating dependency update releases without manual intervention.
+A GitHub Action that automatically creates releases when Dependabot merges PRs to the main branch. Perfect for automating dependency update releases without manual intervention.
 
 ## Features
 ```
@@ -37,8 +37,8 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - name: Auto Release
-        uses: phucbm/auto-release-action@v1
+      - name: Dependabot Release
+        uses: phucbm/dependabot-release-action@v1
         with:
           version-bump: 'patch'  # Always patch for dependency updates
 ```
@@ -70,22 +70,22 @@ jobs:
 
 **Basic setup** (patch bumps only):
 ```yaml
-- name: Auto Release
-  uses: phucbm/auto-release-action@v1
+- name: Dependabot Release
+  uses: phucbm/dependabot-release-action@v1
 ```
 
 **Custom version bumping:**
 ```yaml
-- name: Auto Release
-  uses: phucbm/auto-release-action@v1
+- name: Dependabot Release
+  uses: phucbm/dependabot-release-action@v1
   with:
     version-bump: 'minor'  # For minor dependency updates
 ```
 
 **Minimal releases** (no auto-generated notes):
 ```yaml
-- name: Auto Release
-  uses: phucbm/auto-release-action@v1
+- name: Dependabot Release
+  uses: phucbm/dependabot-release-action@v1
   with:
     release-notes: 'false'
 ```
@@ -94,9 +94,9 @@ jobs:
 
 **Using outputs for notifications:**
 ```yaml
-- name: Auto Release
+- name: Dependabot Release
   id: release
-  uses: phucbm/auto-release-action@v1
+  uses: phucbm/dependabot-release-action@v1
 
 - name: Notify Success
   if: steps.release.outputs.version
@@ -107,8 +107,8 @@ jobs:
 
 **Custom GitHub token:**
 ```yaml
-- name: Auto Release
-  uses: phucbm/auto-release-action@v1
+- name: Dependabot Release
+  uses: phucbm/dependabot-release-action@v1
   with:
     github-token: ${{ secrets.CUSTOM_GITHUB_TOKEN }}
 ```
@@ -145,8 +145,8 @@ This action is designed to work seamlessly with publishing workflows:
 
 **Complete automation pipeline:**
 ```yaml
-# 1. Auto Release (this action)
-name: Auto Release
+# 1. Dependabot Release (this action)
+name: Dependabot Release
 on:
   push:
     branches: [main]
@@ -154,7 +154,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: phucbm/auto-release-action@v1
+      - uses: phucbm/dependabot-release-action@v1
 
 # 2. Auto Publish (separate workflow)
 name: Publish Package
@@ -186,7 +186,7 @@ jobs:
 - ℹ️ Note: Package.json will be updated by the publish workflow
 
 ---
-Automated by Auto Release Action by @phucbm
+Automated by Dependabot Release Action by @phucbm
 ```
 
 ## Version Bump Types
@@ -229,12 +229,12 @@ jobs:
         with:
           dependabot-auto-merge: 'true'
 
-  # Step 2: Auto Release after merge
+  # Step 2: Dependabot Release after merge
   release:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: phucbm/auto-release-action@v1
+      - uses: phucbm/dependabot-release-action@v1
 ```
 
 ## Requirements
