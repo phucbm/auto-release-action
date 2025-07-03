@@ -56,7 +56,6 @@ runs:
         echo "github.actor: ${{ github.actor }}"
         echo "github.event_name: ${{ github.event_name }}"
         echo "github.ref: ${{ github.ref }}"
-        echo "github.repository: ${{ github.repository }}"
         echo "default-branch: ${{ inputs.default-branch }}"
         
         is_dependabot=false
@@ -66,48 +65,24 @@ runs:
         if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
           echo "📝 Push to ${default_branch} detected, checking commit author..."
         
-          # Debug: Test GitHub CLI access
-          echo "🔧 Testing GitHub CLI access..."
-          gh auth status || echo "❌ GitHub CLI auth failed"
+          # Get commit info using git commands
+          commit_author=$(git log -1 --pretty=format:'%an')
+          commit_email=$(git log -1 --pretty=format:'%ae')
+          commit_message=$(git log -1 --pretty=format:'%s')
+          commit_sha=$(git rev-parse HEAD)
         
-          # Get the latest commit info via GitHub API with debug output
-          echo "🔧 Fetching commit info from: repos/${{ github.repository }}/commits/${default_branch}"
-          commit_info=$(gh api repos/${{ github.repository }}/commits/${default_branch} 2>&1)
-          api_exit_code=$?
+          echo "📊 Git commit info:"
+          echo "  - Author: '$commit_author'"
+          echo "  - Email: '$commit_email'"
+          echo "  - SHA: '$commit_sha'"
+          echo "  - Message: '$commit_message'"
         
-          echo "🔧 API call exit code: $api_exit_code"
-          echo "🔧 Raw API response (first 500 chars):"
-          echo "$commit_info" | head -c 500
-          echo ""
-        
-          if [[ $api_exit_code -eq 0 ]]; then
-            # Extract author info
-            github_author=$(echo "$commit_info" | jq -r '.author.login // "null"' 2>/dev/null || echo "jq_failed")
-            commit_author=$(echo "$commit_info" | jq -r '.commit.author.name // "null"' 2>/dev/null || echo "jq_failed")
-            commit_message=$(echo "$commit_info" | jq -r '.commit.message // "null"' 2>/dev/null || echo "jq_failed")
-            commit_sha=$(echo "$commit_info" | jq -r '.sha // "null"' 2>/dev/null || echo "jq_failed")
-        
-            echo "📊 Extracted data:"
-            echo "  - GitHub author (.author.login): '$github_author'"
-            echo "  - Commit author (.commit.author.name): '$commit_author'"
-            echo "  - Commit SHA: '$commit_sha'"
-            echo "  - Commit message (first line): '$(echo "$commit_message" | head -1)'"
-        
-            # Check if authored by Dependabot
-            if [[ "$github_author" == "dependabot[bot]" ]]; then
-              echo "✅ Confirmed: Latest commit was authored by Dependabot (GitHub author)"
-              is_dependabot=true
-            elif [[ "$commit_author" == "dependabot[bot]" ]]; then
-              echo "✅ Confirmed: Latest commit was authored by Dependabot (commit author)"
-              is_dependabot=true
-            else
-              echo "❌ Latest commit was not authored by Dependabot"
-              echo "   GitHub author: '$github_author'"
-              echo "   Commit author: '$commit_author'"
-            fi
+          # Check if authored by Dependabot
+          if [[ "$commit_author" == "dependabot[bot]" ]]; then
+            echo "✅ Confirmed: Latest commit was authored by Dependabot"
+            is_dependabot=true
           else
-            echo "❌ Failed to fetch commit info from GitHub API"
-            echo "🔧 Manual check command: gh api repos/${{ github.repository }}/commits/${default_branch}"
+            echo "❌ Latest commit was not authored by Dependabot (author: '$commit_author')"
           fi
         else
           echo "❌ Not a push to ${default_branch} branch"
@@ -128,7 +103,7 @@ runs:
       run: |
         echo "❌ Action failed: Not triggered by Dependabot commit"
         echo "🔧 To manually check the latest commit author, run:"
-        echo "   gh api repos/${{ github.repository }}/commits/${{ inputs.default-branch }} --jq '{author: .author.login, commit_author: .commit.author.name, message: .commit.message}'"
+        echo "   git log -1 --pretty=format:'Author: %an <%ae>'"
         exit 1
 
     - name: Get current version from package.json
