@@ -23,6 +23,10 @@ inputs:
     description: 'Generate release notes from commits'
     required: false
     default: 'true'
+  default-branch:
+    description: 'Default branch name to check for Dependabot commits'
+    required: false
+    default: 'main'
 
 outputs:
   version:
@@ -38,28 +42,63 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Check if triggered by Dependabot
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ inputs.github-token }}
+        fetch-depth: 0
+
+    - name: Check if triggered by Dependabot commit
       id: dependabot-check
       shell: bash
       run: |
-        if [[ "${{ github.actor }}" == "dependabot[bot]" ]]; then
+        echo "🔍 Checking if this push was from a Dependabot commit..."
+        echo "github.actor: ${{ github.actor }}"
+        echo "github.event_name: ${{ github.event_name }}"
+        echo "github.ref: ${{ github.ref }}"
+        echo "default-branch: ${{ inputs.default-branch }}"
+        
+        is_dependabot=false
+        default_branch="${{ inputs.default-branch }}"
+        
+        # Check if this is a push event to the default branch
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
+          echo "📝 Push to ${default_branch} detected, checking commit author..."
+        
+          # Get the latest commit info via GitHub API
+          commit_info=$(gh api repos/${{ github.repository }}/commits/${default_branch} 2>/dev/null || echo '{}')
+        
+          # Extract author info
+          github_author=$(echo "$commit_info" | jq -r '.author.login // "unknown"')
+          commit_message=$(echo "$commit_info" | jq -r '.commit.message // "unknown"')
+        
+          echo "GitHub author: $github_author"
+          echo "Commit message (first line): $(echo "$commit_message" | head -1)"
+        
+          # Check if authored by Dependabot
+          if [[ "$github_author" == "dependabot[bot]" ]]; then
+            echo "✅ Confirmed: Latest commit was authored by Dependabot"
+            is_dependabot=true
+          else
+            echo "❌ Latest commit was not authored by Dependabot (author: $github_author)"
+          fi
+        else
+          echo "❌ Not a push to ${default_branch} branch"
+        fi
+        
+        # Output result
+        if [[ "$is_dependabot" == "true" ]]; then
           echo "is_dependabot=true" >> $GITHUB_OUTPUT
+          echo "🤖 Dependabot commit detected - proceeding with release"
         else
           echo "is_dependabot=false" >> $GITHUB_OUTPUT
-          echo "🚫 Skipping release - not triggered by Dependabot"
+          echo "🚫 Skipping release - not from a Dependabot commit"
         fi
 
     - name: Exit if not Dependabot
       if: steps.dependabot-check.outputs.is_dependabot == 'false'
       shell: bash
       run: exit 0
-
-    - name: Checkout code
-      if: steps.dependabot-check.outputs.is_dependabot == 'true'
-      uses: actions/checkout@v4
-      with:
-        token: ${{ inputs.github-token }}
-        fetch-depth: 0
 
     - name: Get current version from package.json
       if: steps.dependabot-check.outputs.is_dependabot == 'true'
@@ -199,10 +238,10 @@ runs:
               draft: false,
               prerelease: false
             });
-            
+          
             console.log(`✅ Created release: ${response.data.html_url}`);
             core.setOutput('release-url', response.data.html_url);
-            
+          
             return response.data.html_url;
           } catch (error) {
             console.error('❌ Failed to create release:', error);
