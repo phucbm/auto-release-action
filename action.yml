@@ -48,7 +48,7 @@ runs:
         token: ${{ inputs.github-token }}
         fetch-depth: 0
 
-    - name: Check if triggered by Dependabot commit
+    - name: Check if triggered by Dependabot PR
       id: dependabot-check
       shell: bash
       run: |
@@ -59,38 +59,34 @@ runs:
         echo "default-branch: ${{ inputs.default-branch }}"
         
         is_dependabot=false
-        default_branch="${{ inputs.default-branch }}"
         
         # Method 1: Manual trigger via workflow_dispatch - always proceed
         if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
           echo "🚀 Manual trigger detected via workflow_dispatch - proceeding with release"
           is_dependabot=true
         
-        # Method 2: Automatic trigger via push - check if Dependabot commit
-        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
-          echo "📝 Push to ${default_branch} detected, checking commit author..."
+        # Method 2: PR closed event - check if it's a merged Dependabot PR
+        elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          echo "📝 Pull request event detected"
+          echo "  - PR action: ${{ github.event.action }}"
+          echo "  - PR merged: ${{ github.event.pull_request.merged }}"
+          echo "  - PR author: ${{ github.event.pull_request.user.login }}"
+          echo "  - PR title: ${{ github.event.pull_request.title }}"
+          echo "  - PR number: ${{ github.event.pull_request.number }}"
         
-          # Get commit info using git commands
-          commit_author=$(git log -1 --pretty=format:'%an')
-          commit_email=$(git log -1 --pretty=format:'%ae')
-          commit_message=$(git log -1 --pretty=format:'%s')
-          commit_sha=$(git rev-parse HEAD)
-        
-          echo "📊 Git commit info:"
-          echo "  - Author: '$commit_author'"
-          echo "  - Email: '$commit_email'"
-          echo "  - SHA: '$commit_sha'"
-          echo "  - Message: '$commit_message'"
-        
-          # Check if authored by Dependabot
-          if [[ "$commit_author" == "dependabot[bot]" ]]; then
-            echo "✅ Confirmed: Latest commit was authored by Dependabot"
+          if [[ "${{ github.event.action }}" == "closed" && 
+                "${{ github.event.pull_request.merged }}" == "true" && 
+                "${{ github.event.pull_request.user.login }}" == "dependabot[bot]" ]]; then
+            echo "✅ Confirmed: Dependabot PR was merged - proceeding with release"
             is_dependabot=true
           else
-            echo "❌ Latest commit was not authored by Dependabot (author: '$commit_author')"
+            echo "❌ Not a merged Dependabot PR:"
+            echo "   - Action: ${{ github.event.action }}"
+            echo "   - Merged: ${{ github.event.pull_request.merged }}"
+            echo "   - Author: ${{ github.event.pull_request.user.login }}"
           fi
         else
-          echo "❌ Not a supported trigger (must be push to ${default_branch} or workflow_dispatch)"
+          echo "❌ Not a supported trigger (must be PR closed or workflow_dispatch)"
         fi
         
         # Output result
@@ -106,9 +102,10 @@ runs:
       if: steps.dependabot-check.outputs.is_dependabot == 'false'
       shell: bash
       run: |
-        echo "❌ Action failed: Not triggered by Dependabot commit or manual dispatch"
-        echo "🔧 To manually check the latest commit author, run:"
-        echo "   git log -1 --pretty=format:'Author: %an <%ae>'"
+        echo "❌ Action failed: Not triggered by Dependabot PR merge or manual dispatch"
+        echo "🔧 For Dependabot releases:"
+        echo "   - Ensure Dependabot PRs are being merged to the default branch"
+        echo "   - Or manually trigger this workflow via workflow_dispatch"
         exit 1
 
     - name: Get current version from package.json
@@ -233,8 +230,8 @@ runs:
           let triggerInfo = '';
           if (eventName === 'workflow_dispatch') {
             triggerInfo = `🚀 **Manual release** triggered by @${actor} via workflow dispatch.`;
-          } else if (eventName === 'push') {
-            triggerInfo = `🤖 **Automated release** triggered by Dependabot dependency updates.`;
+          } else if (eventName === 'pull_request') {
+            triggerInfo = `🤖 **Automated release** triggered by Dependabot PR merge.`;
           } else {
             triggerInfo = `📦 **Release** triggered by ${eventName} event.`;
           }
