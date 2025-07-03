@@ -56,6 +56,7 @@ runs:
         echo "github.actor: ${{ github.actor }}"
         echo "github.event_name: ${{ github.event_name }}"
         echo "github.ref: ${{ github.ref }}"
+        echo "github.repository: ${{ github.repository }}"
         echo "default-branch: ${{ inputs.default-branch }}"
         
         is_dependabot=false
@@ -65,22 +66,48 @@ runs:
         if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
           echo "📝 Push to ${default_branch} detected, checking commit author..."
         
-          # Get the latest commit info via GitHub API
-          commit_info=$(gh api repos/${{ github.repository }}/commits/${default_branch} 2>/dev/null || echo '{}')
+          # Debug: Test GitHub CLI access
+          echo "🔧 Testing GitHub CLI access..."
+          gh auth status || echo "❌ GitHub CLI auth failed"
         
-          # Extract author info
-          github_author=$(echo "$commit_info" | jq -r '.author.login // "unknown"')
-          commit_message=$(echo "$commit_info" | jq -r '.commit.message // "unknown"')
+          # Get the latest commit info via GitHub API with debug output
+          echo "🔧 Fetching commit info from: repos/${{ github.repository }}/commits/${default_branch}"
+          commit_info=$(gh api repos/${{ github.repository }}/commits/${default_branch} 2>&1)
+          api_exit_code=$?
         
-          echo "GitHub author: $github_author"
-          echo "Commit message (first line): $(echo "$commit_message" | head -1)"
+          echo "🔧 API call exit code: $api_exit_code"
+          echo "🔧 Raw API response (first 500 chars):"
+          echo "$commit_info" | head -c 500
+          echo ""
         
-          # Check if authored by Dependabot
-          if [[ "$github_author" == "dependabot[bot]" ]]; then
-            echo "✅ Confirmed: Latest commit was authored by Dependabot"
-            is_dependabot=true
+          if [[ $api_exit_code -eq 0 ]]; then
+            # Extract author info
+            github_author=$(echo "$commit_info" | jq -r '.author.login // "null"' 2>/dev/null || echo "jq_failed")
+            commit_author=$(echo "$commit_info" | jq -r '.commit.author.name // "null"' 2>/dev/null || echo "jq_failed")
+            commit_message=$(echo "$commit_info" | jq -r '.commit.message // "null"' 2>/dev/null || echo "jq_failed")
+            commit_sha=$(echo "$commit_info" | jq -r '.sha // "null"' 2>/dev/null || echo "jq_failed")
+        
+            echo "📊 Extracted data:"
+            echo "  - GitHub author (.author.login): '$github_author'"
+            echo "  - Commit author (.commit.author.name): '$commit_author'"
+            echo "  - Commit SHA: '$commit_sha'"
+            echo "  - Commit message (first line): '$(echo "$commit_message" | head -1)'"
+        
+            # Check if authored by Dependabot
+            if [[ "$github_author" == "dependabot[bot]" ]]; then
+              echo "✅ Confirmed: Latest commit was authored by Dependabot (GitHub author)"
+              is_dependabot=true
+            elif [[ "$commit_author" == "dependabot[bot]" ]]; then
+              echo "✅ Confirmed: Latest commit was authored by Dependabot (commit author)"
+              is_dependabot=true
+            else
+              echo "❌ Latest commit was not authored by Dependabot"
+              echo "   GitHub author: '$github_author'"
+              echo "   Commit author: '$commit_author'"
+            fi
           else
-            echo "❌ Latest commit was not authored by Dependabot (author: $github_author)"
+            echo "❌ Failed to fetch commit info from GitHub API"
+            echo "🔧 Manual check command: gh api repos/${{ github.repository }}/commits/${default_branch}"
           fi
         else
           echo "❌ Not a push to ${default_branch} branch"
@@ -98,7 +125,11 @@ runs:
     - name: Exit if not Dependabot
       if: steps.dependabot-check.outputs.is_dependabot == 'false'
       shell: bash
-      run: exit 0
+      run: |
+        echo "❌ Action failed: Not triggered by Dependabot commit"
+        echo "🔧 To manually check the latest commit author, run:"
+        echo "   gh api repos/${{ github.repository }}/commits/${{ inputs.default-branch }} --jq '{author: .author.login, commit_author: .commit.author.name, message: .commit.message}'"
+        exit 1
 
     - name: Get current version from package.json
       if: steps.dependabot-check.outputs.is_dependabot == 'true'
