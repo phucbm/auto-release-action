@@ -52,7 +52,7 @@ runs:
       id: dependabot-check
       shell: bash
       run: |
-        echo "🔍 Checking if this push was from a Dependabot commit..."
+        echo "🔍 Checking if this should proceed with release..."
         echo "github.actor: ${{ github.actor }}"
         echo "github.event_name: ${{ github.event_name }}"
         echo "github.ref: ${{ github.ref }}"
@@ -61,8 +61,13 @@ runs:
         is_dependabot=false
         default_branch="${{ inputs.default-branch }}"
         
-        # Check if this is a push event to the default branch
-        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
+        # Method 1: Manual trigger via workflow_dispatch - always proceed
+        if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "🚀 Manual trigger detected via workflow_dispatch - proceeding with release"
+          is_dependabot=true
+        
+        # Method 2: Automatic trigger via push - check if Dependabot commit
+        elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/${default_branch}" ]]; then
           echo "📝 Push to ${default_branch} detected, checking commit author..."
         
           # Get commit info using git commands
@@ -85,23 +90,23 @@ runs:
             echo "❌ Latest commit was not authored by Dependabot (author: '$commit_author')"
           fi
         else
-          echo "❌ Not a push to ${default_branch} branch"
+          echo "❌ Not a supported trigger (must be push to ${default_branch} or workflow_dispatch)"
         fi
         
         # Output result
         if [[ "$is_dependabot" == "true" ]]; then
           echo "is_dependabot=true" >> $GITHUB_OUTPUT
-          echo "🤖 Dependabot commit detected - proceeding with release"
+          echo "🤖 Proceeding with release"
         else
           echo "is_dependabot=false" >> $GITHUB_OUTPUT
-          echo "🚫 Skipping release - not from a Dependabot commit"
+          echo "🚫 Skipping release"
         fi
 
-    - name: Exit if not Dependabot
+    - name: Exit if not proceeding
       if: steps.dependabot-check.outputs.is_dependabot == 'false'
       shell: bash
       run: |
-        echo "❌ Action failed: Not triggered by Dependabot commit"
+        echo "❌ Action failed: Not triggered by Dependabot commit or manual dispatch"
         echo "🔧 To manually check the latest commit author, run:"
         echo "   git log -1 --pretty=format:'Author: %an <%ae>'"
         exit 1
@@ -221,8 +226,20 @@ runs:
           const newVersion = '${{ steps.version-bump.outputs.version }}';
           const releaseNotes = '${{ inputs.release-notes }}' === 'true';
           const commits = `${{ steps.get-commits.outputs.commits }}`;
+          const eventName = '${{ github.event_name }}';
+          const actor = '${{ github.actor }}';
           
-          let body = `🤖 **Automated release** triggered by Dependabot dependency updates.\n\n`;
+          // Determine trigger type and create appropriate message
+          let triggerInfo = '';
+          if (eventName === 'workflow_dispatch') {
+            triggerInfo = `🚀 **Manual release** triggered by @${actor} via workflow dispatch.`;
+          } else if (eventName === 'push') {
+            triggerInfo = `🤖 **Automated release** triggered by Dependabot dependency updates.`;
+          } else {
+            triggerInfo = `📦 **Release** triggered by ${eventName} event.`;
+          }
+          
+          let body = `${triggerInfo}\n\n`;
           
           if (releaseNotes && commits.trim()) {
             body += `## What's Changed\n${commits}\n\n`;
@@ -230,7 +247,13 @@ runs:
           
           body += `## Details\n`;
           body += `- 📦 **Version bump**: ${{ inputs.version-bump }}\n`;
-          body += `- 🤖 **Triggered by**: ${{ github.actor }}\n`;
+          body += `- 🎯 **Trigger**: ${eventName}\n`;
+          body += `- 👤 **Triggered by**: @${actor}\n`;
+          
+          if (eventName === 'workflow_dispatch') {
+            body += `- 🔧 **Manual version bump**: ${{ github.event.inputs.version-bump || 'patch' }}\n`;
+          }
+          
           body += `- ℹ️ **Note**: Package.json will be updated by the publish workflow\n\n`;
           body += `---\n*Automated by [Dependabot Release Action](https://github.com/phucbm/dependabot-release-action) by @phucbm*`;
           
